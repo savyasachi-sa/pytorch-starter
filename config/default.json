@@ -1,0 +1,20 @@
+{
+  "experiment_name": "default_experiment",
+  "dataset": {
+    "training_fraction": 0.8,
+    "path": "INSERT_DATASET_SPECIFIC_PATH",
+    "transforms": [
+      "CONFIGURABLE TRANSFORMS"
+    ],
+  },
+  "experiment": {
+    "num_epochs": 200,
+    "learning_rate": 1e-3,
+    "batch_size_train": 2,
+    "batch_size_val": 16,
+    "num_workers": 8
+  },
+  "model": {
+
+  }
+}
