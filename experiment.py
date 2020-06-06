@@ -18,151 +18,152 @@ class Experiment(object):
             raise Exception("Configuration file doesn't exist: ", name)
 
         # Load Datasets
-        self.name = config_data['experiment_name']
-        self.experiment_dir = os.path.join(ROOT_STATS_DIR, self.name)
+        self.__name = config_data['experiment_name']
+        self.__experiment_dir = os.path.join(ROOT_STATS_DIR, self.__name)
 
         ds_train, ds_val = get_datasets(config_data)
-        self.train_loader = DataLoader(ds_train, batch_size=config_data['experiment']['batch_size_train'], shuffle=True,
+        self.__train_loader = DataLoader(ds_train, batch_size=config_data['experiment']['batch_size_train'],
+                                         shuffle=True,
+                                         num_workers=config_data['experiment']['num_workers'], pin_memory=True)
+        self.__val_loader = DataLoader(ds_val, batch_size=config_data['experiment']['batch_size_val'], shuffle=True,
                                        num_workers=config_data['experiment']['num_workers'], pin_memory=True)
-        self.val_loader = DataLoader(ds_val, batch_size=config_data['experiment']['batch_size_val'], shuffle=True,
-                                     num_workers=config_data['experiment']['num_workers'], pin_memory=True)
         # Setup Experiment Stats
-        self.epochs = config_data['experiment']['num_epochs']
-        self.current_epoch = 0
-        self.training_losses = []
-        self.val_losses = []
+        self.__epochs = config_data['experiment']['num_epochs']
+        self.__current_epoch = 0
+        self.__training_losses = []
+        self.__val_losses = []
 
         # Init Model
-        self.model = get_model(config_data)
+        self.__model = get_model(config_data)
 
         # These can be made configurable or changed, if required.
-        self.criterion = torch.nn.BCEWithLogitsLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config_data['experiment']['learning_rate'])
+        self.__criterion = torch.nn.BCEWithLogitsLoss()
+        self.__optimizer = torch.optim.Adam(self.__model.parameters(), lr=config_data['experiment']['learning_rate'])
 
-        self.init_model()
+        self.__init_model()
 
         # Load Experiment Data if available
-        self.load_experiment()
+        self.__load_experiment()
 
-    def load_experiment(self):
+    def __load_experiment(self):
         os.makedirs(ROOT_STATS_DIR, exist_ok=True)
 
-        if os.path.exists(self.experiment_dir):
-            self.training_losses = read_file_in_dir(self.experiment_dir, 'training_losses.txt')
-            self.val_losses = read_file_in_dir(self.experiment_dir, 'val_losses.txt')
-            self.current_epoch = len(self.training_losses)
+        if os.path.exists(self.__experiment_dir):
+            self.__training_losses = read_file_in_dir(self.__experiment_dir, 'training_losses.txt')
+            self.__val_losses = read_file_in_dir(self.__experiment_dir, 'val_losses.txt')
+            self.__current_epoch = len(self.__training_losses)
 
-            state_dict = torch.load(os.path.join(self.experiment_dir, 'latest_model.pt'))
-            self.model.load_state_dict(state_dict['model'])
-            self.optimizer.load_state_dict(state_dict['optimizer'])
+            state_dict = torch.load(os.path.join(self.__experiment_dir, 'latest_model.pt'))
+            self.__model.load_state_dict(state_dict['model'])
+            self.__optimizer.load_state_dict(state_dict['optimizer'])
 
         else:
-            os.makedirs(self.experiment_dir)
-            os.makedirs(os.path.join(self.experiment_dir, 'models'))
+            os.makedirs(self.__experiment_dir)
+            os.makedirs(os.path.join(self.__experiment_dir, 'models'))
 
-    def init_model(self):
+    def __init_model(self):
         if torch.cuda.is_available():
-            self.model = self.model.cuda().float()
-            self.criterion = self.criterion.cuda()
+            self.__model = self.__model.cuda().float()
+            self.__criterion = self.__criterion.cuda()
         # self.model = torch.nn.DataParallel(self.model)
 
     def run(self):
-        start_epoch = self.current_epoch
-        for epoch in range(start_epoch, self.epochs):  # loop over the dataset multiple times
+        start_epoch = self.__current_epoch
+        for epoch in range(start_epoch, self.__epochs):  # loop over the dataset multiple times
             start_time = datetime.now()
-            self.current_epoch = epoch
-            train_loss = self.train()
-            val_loss = self.val()
-            self.record_stats(train_loss, val_loss)
-            self.log_epoch_stats(start_time)
-            self.save_model()
+            self.__current_epoch = epoch
+            train_loss = self.__train()
+            val_loss = self.__val()
+            self.__record_stats(train_loss, val_loss)
+            self.__log_epoch_stats(start_time)
+            self.__save_model()
 
-    def train(self):
-        self.model.train()
+    def __train(self):
+        self.__model.__train()
         train_loss_epoch = []
-        for i, data in enumerate(self.train_loader):
+        for i, data in enumerate(self.__train_loader):
             inputs = data[0].cuda().float() if torch.cuda.is_available() else data[0].double()
             labels = data[1].cuda().float() if torch.cuda.is_available() else data[1].double()
 
-            self.optimizer.zero_grad()
-            outputs = self.model.forward(inputs).squeeze()
-            loss = self.criterion(outputs, labels)
+            self.__optimizer.zero_grad()
+            outputs = self.__model.forward(inputs).squeeze()
+            loss = self.__criterion(outputs, labels)
             loss.backward()
-            self.optimizer.step()
+            self.__optimizer.step()
             train_loss_epoch.append(loss.item())
 
-            status_str = "Epoch: {}, Train, Batch {}/{}. Loss {}".format(self.current_epoch + 1, i + 1,
-                                                                         len(self.train_loader),
+            status_str = "Epoch: {}, Train, Batch {}/{}. Loss {}".format(self.__current_epoch + 1, i + 1,
+                                                                         len(self.__train_loader),
                                                                          loss.item())
-            self.log(status_str)
+            self.__log(status_str)
 
         return np.mean(train_loss_epoch)
 
-    def val(self):
-        self.model.eval()
+    def __val(self):
+        self.__model.eval()
         val_loss_epoch = []
-        for i, data in enumerate(self.val_loader):
+        for i, data in enumerate(self.__val_loader):
             inputs = data[0].cuda().float() if torch.cuda.is_available() else data[0].double()
             labels = data[1].cuda().float() if torch.cuda.is_available() else data[1].double()
 
             with torch.no_grad():
-                outputs = self.model.forward(inputs).squeeze()
-                loss = self.criterion(outputs, labels)
+                outputs = self.__model.forward(inputs).squeeze()
+                loss = self.__criterion(outputs, labels)
             val_loss_epoch.append(loss.item())
 
-            status_str = "Epoch: {}, Val, Batch {}/{}. Loss {}".format(self.current_epoch + 1, i + 1,
-                                                                       len(self.val_loader),
+            status_str = "Epoch: {}, Val, Batch {}/{}. Loss {}".format(self.__current_epoch + 1, i + 1,
+                                                                       len(self.__val_loader),
                                                                        loss.item())
-            self.log(status_str)
+            self.__log(status_str)
 
         return np.mean(val_loss_epoch)
 
-    def save_model(self):
-        epoch_model_path = os.path.join(self.experiment_dir, 'models', 'model_{}.pt'.format(self.current_epoch))
-        root_model_path = os.path.join(self.experiment_dir, 'latest_model.pt')
+    def __save_model(self):
+        epoch_model_path = os.path.join(self.__experiment_dir, 'models', 'model_{}.pt'.format(self.__current_epoch))
+        root_model_path = os.path.join(self.__experiment_dir, 'latest_model.pt')
 
-        if isinstance(self.model, torch.nn.DataParallel):
-            model_dict = self.model.module.state_dict()
+        if isinstance(self.__model, torch.nn.DataParallel):
+            model_dict = self.__model.module.state_dict()
         else:
-            model_dict = self.model.state_dict()
+            model_dict = self.__model.state_dict()
 
-        state_dict = {'model': model_dict, 'optimizer': self.optimizer.state_dict()}
-        torch.save(self.model.state_dict(), epoch_model_path)
+        state_dict = {'model': model_dict, 'optimizer': self.__optimizer.state_dict()}
+        torch.save(self.__model.state_dict(), epoch_model_path)
         torch.save(state_dict, root_model_path)
 
-    def record_stats(self, train_loss, val_loss, val_dice):
-        self.training_losses.append(train_loss)
-        self.val_losses.append(val_loss)
+    def __record_stats(self, train_loss, val_loss, val_dice):
+        self.__training_losses.append(train_loss)
+        self.__val_losses.append(val_loss)
 
         self.plot_stats()
 
-        write_to_file_in_dir(self.experiment_dir, 'training_losses.txt', self.training_losses)
-        write_to_file_in_dir(self.experiment_dir, 'val_losses.txt', self.val_losses)
+        write_to_file_in_dir(self.__experiment_dir, 'training_losses.txt', self.__training_losses)
+        write_to_file_in_dir(self.__experiment_dir, 'val_losses.txt', self.__val_losses)
 
-    def log(self, log_str, file_name=None):
+    def __log(self, log_str, file_name=None):
         print(log_str)
-        log_to_file_in_dir(self.experiment_dir, 'all.log', log_str)
+        log_to_file_in_dir(self.__experiment_dir, 'all.log', log_str)
         if file_name is not None:
-            log_to_file_in_dir(self.experiment_dir, file_name, log_str)
+            log_to_file_in_dir(self.__experiment_dir, file_name, log_str)
 
-    def log_epoch_stats(self, start_time):
+    def __log_epoch_stats(self, start_time):
         time_elapsed = datetime.now() - start_time
-        time_to_completion = time_elapsed * (self.epochs - self.current_epoch - 1)
-        train_loss = self.training_losses[self.current_epoch]
-        val_loss = self.val_losses[self.current_epoch]
+        time_to_completion = time_elapsed * (self.__epochs - self.__current_epoch - 1)
+        train_loss = self.__training_losses[self.__current_epoch]
+        val_loss = self.__val_losses[self.__current_epoch]
         summary_str = "Epoch: {}, Train Loss: {}, Val Loss: {}, Took {}, ETA: {}\n"
-        summary_str = summary_str.format(self.current_epoch + 1, train_loss, val_loss, str(time_elapsed),
+        summary_str = summary_str.format(self.__current_epoch + 1, train_loss, val_loss, str(time_elapsed),
                                          str(time_to_completion))
-        self.log(summary_str, 'epoch.log')
+        self.__log(summary_str, 'epoch.log')
 
     def plot_stats(self):
-        e = len(self.training_losses)
+        e = len(self.__training_losses)
         x_axis = np.arange(1, e + 1, 1)
         plt.figure()
-        plt.plot(x_axis, self.training_losses, label="Training Loss")
-        plt.plot(x_axis, self.val_losses, label="Validation Loss")
+        plt.plot(x_axis, self.__training_losses, label="Training Loss")
+        plt.plot(x_axis, self.__val_losses, label="Validation Loss")
         plt.xlabel("Epochs")
         plt.legend(loc='best')
-        plt.title(self.name + " Stats Plot")
-        plt.savefig(os.path.join(self.experiment_dir, "stat_plot.png"))
+        plt.title(self.__name + " Stats Plot")
+        plt.savefig(os.path.join(self.__experiment_dir, "stat_plot.png"))
         plt.show()
